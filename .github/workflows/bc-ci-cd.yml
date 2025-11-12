@@ -39,7 +39,7 @@ jobs:
         id: artifacts
         shell: pwsh
         run: |
-          $artifactUrl = Get-BCArtifactUrl -type 'Sandbox' -select 'Latest' -country 'w1'
+          $artifactUrl = Get-BCArtifactUrl -type 'Sandbox' -select 'Latest' -country 'gb'
           echo "artifactUrl=$artifactUrl" | Out-File -FilePath $Env:GITHUB_OUTPUT -Append
 
       - name: Build in ephemeral BC container
