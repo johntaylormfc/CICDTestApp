@@ -84,6 +84,14 @@ jobs:
             }
           }
 
+      - name: List built artifacts before upload
+        shell: pwsh
+        run: |
+          if (Test-Path artifacts) {
+            Write-Host "Artifacts directory contents:";
+            Get-ChildItem -Path artifacts -Filter *.app | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
+          } else { Write-Host "Artifacts directory not found" }
+
       - name: Upload build artifacts (.app)
         uses: actions/upload-artifact@v4
         with:
