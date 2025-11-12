@@ -48,11 +48,15 @@ jobs:
           ARTIFACT_URL: ${{ steps.artifacts.outputs.artifactUrl }}
         run: |
           $containerName = "bcbuild$($env:GITHUB_RUN_NUMBER)"
+          # Provide mandatory credentials for -auth UserPassword
+          $securePwd = ConvertTo-SecureString ("P@ssw0rd!$($env:GITHUB_RUN_NUMBER)") -AsPlainText -Force
+          $credential = New-Object System.Management.Automation.PSCredential ("admin", $securePwd)
           New-BcContainer `
             -accept_eula `
             -containerName $containerName `
             -artifactUrl $env:ARTIFACT_URL `
             -auth UserPassword `
+            -Credential $credential `
             -updateHosts `
             -enableTaskScheduler:$false
 
