@@ -153,8 +153,11 @@ jobs:
             Invoke-WebRequest -Uri 'https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-dynamics-smb/vsextensions/al/latest/vspackage' -OutFile $vsix
             Write-Host 'Extracting VSIX'
             Expand-Archive -Path $vsix -DestinationPath $vsixOut -Force
-            $alc = Join-Path $vsixOut 'extension/bin/alc.exe'
-            if (-not (Test-Path $alc)) { throw 'alc.exe not found in downloaded VSIX' }
+            # Locate alc.exe anywhere inside the extracted VSIX (layout can change between versions)
+            $alcCandidates = Get-ChildItem -Path $vsixOut -Filter 'alc.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            if (-not $alcCandidates) { throw 'alc.exe not found in downloaded VSIX' }
+            $alc = $alcCandidates | Where-Object { $_ -match '\\extension\\bin\\' } | Select-Object -First 1
+            if (-not $alc) { $alc = $alcCandidates | Select-Object -First 1 }
 
             Write-Host "ALC Version on host:"; (Get-Item $alc).VersionInfo | Select-Object FileVersion,ProductVersion | Format-List | Out-String | Write-Host
             $args = @(
