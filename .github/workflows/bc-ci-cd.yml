@@ -115,36 +115,46 @@ jobs:
               }
             } else { Write-Host "No symbol download command found; continuing" }
 
-            # Copy project (now with symbols) into container path c:\app
-            Write-Host "Copying project into container path c:\app"
-            # Copy-FileToBcContainer copies directories recursively by default; removed unsupported -includeSubFolders parameter
-            Copy-FileToBcContainer -containerName $containerName -localPath $Env:GITHUB_WORKSPACE -containerPath "c:\app"
+            # Fallback: if no symbols were downloaded, try to copy *.app symbols out of the container
+            $pkgPath = Join-Path $Env:GITHUB_WORKSPACE '.alpackages'
+            if (-not (Test-Path $pkgPath)) { New-Item -ItemType Directory -Force -Path $pkgPath | Out-Null }
+            $pkgCount = (Get-ChildItem -Path $pkgPath -Filter '*.app' -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($pkgCount -eq 0) {
+              Write-Host 'No .alpackages found on host; copying symbols from container applications folder'
+              Invoke-ScriptInBCContainer -containerName $containerName -scriptBlock {
+                $dest = 'C:\\tempSymbols'
+                New-Item -ItemType Directory -Force -Path $dest | Out-Null
+                Get-ChildItem -Path 'C:\\Applications' -Filter '*.app' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+                  Copy-Item -Path $_.FullName -Destination $dest -Force
+                }
+              }
+              Copy-FileFromBcContainer -containerName $containerName -containerPath 'C:\\tempSymbols' -localPath $pkgPath -silent
+            }
 
             # Prepare artifacts folder on host
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
 
-            # Compile using ALC inside the container to avoid host share checks
-            $containerOutput = "c:\app\output"
-            Invoke-ScriptInBCContainer -containerName $containerName -scriptBlock {
-              $ErrorActionPreference = 'Stop'
-              if (-not (Test-Path 'c:\app')) { throw 'Source folder c:\app not found inside container' }
-              New-Item -ItemType Directory -Force -Path 'c:\app\output' | Out-Null
-              # Locate alc.exe inside container (path differs across images)
-              $alc = 'C:\run\Microsoft.al\alc.exe'
-              if (-not (Test-Path $alc)) { $alc = 'C:\Run\Microsoft.al\alc.exe' }
-              if (-not (Test-Path $alc)) {
-                $found = Get-ChildItem -Path 'C:\' -Filter 'alc.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-                if ($found) { $alc = $found } else { throw 'alc.exe not found in container' }
-              }
-              $args = @(
-                '/project:c:\app',
-                '/packagecachepath:c:\app\.alpackages',
-                '/out:c:\app\output\app.app'
-              )
-              Write-Host "Running ALC: $alc $($args -join ' ')"
-              & $alc @args
-              if ($LASTEXITCODE -ne 0) { throw "ALC failed with exit code $LASTEXITCODE" }
-            }
+            # Download AL compiler (VSIX) on host and compile locally
+            $alDir = Join-Path $Env:GITHUB_WORKSPACE '_al'
+            New-Item -ItemType Directory -Force -Path $alDir | Out-Null
+            $vsix = Join-Path $alDir 'al.vsix'
+            $vsixOut = Join-Path $alDir 'vsix'
+            Write-Host 'Downloading AL Language VSIX (latest)'
+            Invoke-WebRequest -Uri 'https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-dynamics-smb/vsextensions/al/latest/vspackage' -OutFile $vsix
+            Write-Host 'Extracting VSIX'
+            Expand-Archive -Path $vsix -DestinationPath $vsixOut -Force
+            $alc = Join-Path $vsixOut 'extension/bin/alc.exe'
+            if (-not (Test-Path $alc)) { throw 'alc.exe not found in downloaded VSIX' }
+
+            Write-Host "ALC Version on host:"; (Get-Item $alc).VersionInfo | Select-Object FileVersion,ProductVersion | Format-List | Out-String | Write-Host
+            $args = @(
+              "/project:$Env:GITHUB_WORKSPACE",
+              "/packagecachepath:$pkgPath",
+              "/out:$Env:GITHUB_WORKSPACE\artifacts\app.app"
+            )
+            Write-Host "Running ALC on host: $alc $($args -join ' ')"
+            & $alc @args
+            if ($LASTEXITCODE -ne 0) { throw "ALC failed on host with exit code $LASTEXITCODE" }
 
             Write-Host "Copy compiled artifacts from container to host artifacts folder"
             Copy-FileFromBcContainer -containerName $containerName -containerPath $containerOutput -localPath "$Env:GITHUB_WORKSPACE\artifacts" -silent
@@ -154,8 +164,7 @@ jobs:
               Get-ChildItem "$Env:GITHUB_WORKSPACE\.alpackages" | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
             } else { Write-Host ".alpackages not found" }
 
-            Write-Host "ALC Version inside container:";
-            Invoke-ScriptInBCContainer -containerName $containerName -scriptBlock { (Get-Command alc.exe -ErrorAction SilentlyContinue).FileVersionInfo | Select-Object FileVersion,ProductVersion }
+            # Done
           }
           finally {
             try {
