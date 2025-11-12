@@ -129,7 +129,13 @@ jobs:
               $ErrorActionPreference = 'Stop'
               if (-not (Test-Path 'c:\app')) { throw 'Source folder c:\app not found inside container' }
               New-Item -ItemType Directory -Force -Path 'c:\app\output' | Out-Null
-              $alc = 'alc.exe'
+              # Locate alc.exe inside container (path differs across images)
+              $alc = 'C:\run\Microsoft.al\alc.exe'
+              if (-not (Test-Path $alc)) { $alc = 'C:\Run\Microsoft.al\alc.exe' }
+              if (-not (Test-Path $alc)) {
+                $found = Get-ChildItem -Path 'C:\' -Filter 'alc.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+                if ($found) { $alc = $found } else { throw 'alc.exe not found in container' }
+              }
               $args = @(
                 '/project:c:\app',
                 '/packagecachepath:c:\app\.alpackages',
