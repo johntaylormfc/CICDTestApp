@@ -35,10 +35,16 @@ The workflow uses PowerShell and BcContainerHelper to:
 - Push or open a PR against `main` (or `master`).
 - The “BC CI/CD” workflow will build and produce a `.app` artifact.
 
+### Other ways to trigger CI
+- Manually dispatch: Go to Actions > BC CI/CD > Run workflow and leave "deploy" unchecked.
+- Any commit to `main`/`master` or a PR targeting those branches will also trigger the build job.
+
 ## Run CD (manual deploy)
 - Go to Actions > “BC CI/CD” > Run workflow
 - Enable the `deploy` checkbox and set `environment` (defaults to `Sandbox`)
 - The job will download the artifact from this run and publish it to the specified environment.
+
+Tip: If you only want to build (no deploy), run the workflow without checking `deploy`.
 
 ## Changing regions/versions
 Edit `.github/workflows/bc-ci-cd.yml` and change the `country` in `Get-BCArtifactUrl` (e.g., `us`, `gb`, `dk`) or pin a specific version/build if desired.
@@ -48,6 +54,27 @@ Edit `.github/workflows/bc-ci-cd.yml` and change the `country` in `Get-BCArtifac
 - Compilation errors: Open the raw workflow logs to see CodeCop warnings and ALC compiler errors. Fix AL code or dependencies.
 - Symbols: The pipeline runs `Download-BcContainerAppSymbols` automatically; verify your `app.json` dependencies are correct.
 - Deployment failures: Verify secrets and that the app registration has access to the BC environment and admin consent was granted.
+
+## Optional: Local pre-flight build (PowerShell)
+Use this to validate your app compiles inside a container locally before pushing. Requires Docker Desktop (Windows containers) and PowerShell:
+
+```powershell
+Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+Install-Module BcContainerHelper -Scope CurrentUser -Force
+
+$artifactUrl = Get-BCArtifactUrl -type 'Sandbox' -select 'Latest' -country 'gb'
+$containerName = "bcbuild-local"
+New-BcContainer -accept_eula -containerName $containerName -artifactUrl $artifactUrl -auth UserPassword -updateHosts -enableTaskScheduler:$false -Credential (New-Object pscredential('admin',(ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)))
+
+try {
+  Download-BcContainerAppSymbols -containerName $containerName -appProjectFolder "$PWD"
+  New-Item -ItemType Directory -Force -Path "$PWD\artifacts" | Out-Null
+  Compile-AppInBCContainer -containerName $containerName -appProjectFolder "$PWD" -appOutputFolder "$PWD\artifacts" -EnableCodeCop:$true -EnablePerTenantExtensionCop:$true -failonwarnings:$false
+}
+finally {
+  try { Remove-BcContainer -containerName $containerName } catch { Write-Host $_.Exception.Message }
+}
+```
 
 ## Optional: local git setup
 ```powershell
