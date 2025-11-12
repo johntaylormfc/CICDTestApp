@@ -47,6 +47,12 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.artifacts.outputs.artifactUrl }}
         run: |
+          # Ensure BcContainerHelper is imported in this step/session
+          Import-Module BcContainerHelper -ErrorAction Stop
+          Write-Host "BcContainerHelper version:" (Get-Module BcContainerHelper).Version
+          $cmd = Get-Command Download-BcContainerAppSymbols -ErrorAction SilentlyContinue
+          if (-not $cmd) { Write-Host "Download-BcContainerAppSymbols not found in module, continuing after container creation (module may autoload)" }
+
           $containerName = "bcbuild$($env:GITHUB_RUN_NUMBER)"
           # Provide mandatory credentials for -auth UserPassword
           $securePwd = ConvertTo-SecureString ("P@ssw0rd!$($env:GITHUB_RUN_NUMBER)") -AsPlainText -Force
@@ -61,6 +67,8 @@ jobs:
             -enableTaskScheduler:$false
 
           try {
+            # Re-import module to guard against session boundary issues
+            Import-Module BcContainerHelper -ErrorAction Stop
             Download-BcContainerAppSymbols -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
 
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
