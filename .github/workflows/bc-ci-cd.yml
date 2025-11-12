@@ -88,9 +88,6 @@ jobs:
           # Provide mandatory credentials for -auth UserPassword
           $securePwd = ConvertTo-SecureString ("P@ssw0rd!$($env:GITHUB_RUN_NUMBER)") -AsPlainText -Force
           $credential = New-Object System.Management.Automation.PSCredential ("admin", $securePwd)
-         
-            # Mount the workspace into the container to avoid host sharing issues
-            $hostProject = $Env:GITHUB_WORKSPACE
           New-BcContainer `
             -accept_eula `
             -containerName $containerName `
@@ -98,30 +95,36 @@ jobs:
             -auth UserPassword `
             -Credential $credential `
             -updateHosts `
-             -enableTaskScheduler:$false `
-             -additionalParameters @("--volume $hostProject:c:\app")
+            -enableTaskScheduler:$false
 
           try {
-            # Re-import module to guard against session boundary issues
+            # Re-import module and ensure symbols downloaded to HOST first (host path shares not reliable for direct compile)
             Import-Module BcContainerHelper -ErrorAction Stop
             $symbolCmd = @('Download-BcContainerAppSymbols','Get-BcContainerAppSymbols') | ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
             if ($null -ne $symbolCmd) {
-              Write-Host "Using symbol download command: $($symbolCmd.Name)"
+              Write-Host "Downloading symbols to host using: $($symbolCmd.Name)"
               & $symbolCmd.Name -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
-            }
-            else {
-              Write-Host "No symbol download command found. Proceeding to compile; compiler will attempt symbol resolution."
-            }
+            } else { Write-Host "No symbol download command found; continuing" }
 
+            # Copy project (now with symbols) into container path c:\app
+            Write-Host "Copying project into container path c:\app"
+            Copy-FileToBcContainer -containerName $containerName -localPath $Env:GITHUB_WORKSPACE -containerPath "c:\app" -includeSubFolders
+
+            # Prepare artifacts folder on host
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
 
-             Compile-AppInBCContainer `
-               -containerName $containerName `
-               -appProjectFolder "c:\app" `
-               -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" ` 
+            # Compile from inside-container path, output to container path then copy back to host
+            $containerOutput = "c:\app\output"
+            Compile-AppInBCContainer `
+              -containerName $containerName `
+              -appProjectFolder "c:\app" `
+              -appOutputFolder $containerOutput `
               -EnableCodeCop:$true `
               -EnableAppSourceCop:$false `
               -EnablePerTenantExtensionCop:$true
+
+            Write-Host "Copy compiled artifacts from container to host artifacts folder"
+            Copy-FileFromBcContainer -containerName $containerName -containerPath $containerOutput -localPath "$Env:GITHUB_WORKSPACE\artifacts" -silent
 
             Write-Host "Listing .alpackages after compile (if present)";
             if (Test-Path "$Env:GITHUB_WORKSPACE\.alpackages") {
