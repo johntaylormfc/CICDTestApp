@@ -29,6 +29,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Log run context
+        shell: pwsh
+        run: |
+          Write-Host "Workflow commit SHA: $env:GITHUB_SHA"
+          Write-Host "Runner OS: $env:RUNNER_OS"
+
       - name: Cache BcContainerHelper module
         uses: actions/cache@v4
         with:
