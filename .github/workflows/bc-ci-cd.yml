@@ -119,6 +119,14 @@ jobs:
               -EnableCodeCop:$true `
               -EnableAppSourceCop:$false `
               -EnablePerTenantExtensionCop:$true
+
+            Write-Host "Listing .alpackages after compile (if present)";
+            if (Test-Path "$Env:GITHUB_WORKSPACE\.alpackages") {
+              Get-ChildItem "$Env:GITHUB_WORKSPACE\.alpackages" | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize | Out-String | Write-Host
+            } else { Write-Host ".alpackages not found" }
+
+            Write-Host "ALC Version inside container:";
+            Invoke-ScriptInBCContainer -containerName $containerName -scriptBlock { (Get-Command alc.exe -ErrorAction SilentlyContinue).FileVersionInfo | Select-Object FileVersion,ProductVersion }
           }
           finally {
             try {

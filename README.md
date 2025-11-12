@@ -46,6 +46,16 @@ The workflow uses PowerShell and BcContainerHelper to:
 
 Tip: If you only want to build (no deploy), run the workflow without checking `deploy`.
 
+### Manual deploy checklist
+1) Create repo secrets (Settings > Secrets and variables > Actions):
+  - `BC_TENANT_ID` — Entra tenant ID (GUID)
+  - `BC_CLIENT_ID` — App registration (client) ID
+  - `BC_CLIENT_SECRET` — App registration client secret
+2) Grant app access in BC Admin Center: Environment > App registrations > Add your app.
+3) Admin consent for “Dynamics 365 Business Central” application permissions in Entra.
+4) Run Actions > BC CI/CD > Run workflow with `deploy = true` and choose the `environment`.
+5) Inspect the “Authenticate and deploy” step for publish/install output.
+
 ## Changing regions/versions
 Edit `.github/workflows/bc-ci-cd.yml` and change the `country` in `Get-BCArtifactUrl` (e.g., `us`, `gb`, `dk`) or pin a specific version/build if desired.
 
@@ -54,6 +64,17 @@ Edit `.github/workflows/bc-ci-cd.yml` and change the `country` in `Get-BCArtifac
 - Compilation errors: Open the raw workflow logs to see CodeCop warnings and ALC compiler errors. Fix AL code or dependencies.
 - Symbols: The pipeline runs `Download-BcContainerAppSymbols` automatically; verify your `app.json` dependencies are correct.
 - Deployment failures: Verify secrets and that the app registration has access to the BC environment and admin consent was granted.
+
+### Known pipeline hiccups and fixes
+- Container auth required: `New-BcContainer` with `-auth UserPassword` needs a credential. The workflow generates one per run and passes `-Credential`.
+- Cleanup parameter: Some versions don’t support `Remove-BcContainer -Force`; we call `Remove-BcContainer` without `-Force` and ignore cleanup errors.
+- Host share error: “appProjectFolder is not shared with the container” is fixed by compiling with `-CopyAppToContainer`.
+- Symbols cmdlet name differences: If `Download-BcContainerAppSymbols` isn’t available, the workflow falls back to `Get-BcContainerAppSymbols`. If neither is found, compile may still work if symbols are already resolved.
+- Slow first run: BcContainerHelper and `.alpackages` are cached. Subsequent runs are faster (cache hits will be shown in logs).
+
+### Where to look in logs
+- “Build in ephemeral BC container” for container creation, symbol download, compile, and ALC version.
+- “List built artifacts before upload” and the artifact itself to confirm the `.app` output.
 
 ## Optional: Local pre-flight build (PowerShell)
 Use this to validate your app compiles inside a container locally before pushing. Requires Docker Desktop (Windows containers) and PowerShell:
