@@ -1,5 +1,7 @@
 # CICDTestApp (AL / Business Central)
 
+[![BC CI/CD](https://github.com/johntaylormfc/CICDTestApp/actions/workflows/bc-ci-cd.yml/badge.svg)](https://github.com/johntaylormfc/CICDTestApp/actions/workflows/bc-ci-cd.yml)
+
 This repository is configured for a simple CI/CD workflow on GitHub Actions:
 - CI: Builds the AL app in a Business Central container and uploads the .app as an artifact.
 - CD (manual): Deploys the built .app to a target Business Central environment using Entra ID app credentials.
