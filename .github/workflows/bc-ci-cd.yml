@@ -29,11 +29,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache BcContainerHelper module
+        uses: actions/cache@v4
+        with:
+          path: ~\Documents\PowerShell\Modules\BcContainerHelper
+          key: bccontainerhelper-${{ runner.os }}-v6
+          restore-keys: |
+            bccontainerhelper-${{ runner.os }}-
+
       - name: Setup PowerShell Gallery trust and install BcContainerHelper
         shell: pwsh
         run: |
           Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-          Install-Module BcContainerHelper -Scope CurrentUser -Force
+          if (Get-Module -ListAvailable -Name BcContainerHelper) {
+            Write-Host "Using cached BcContainerHelper module"
+            Import-Module BcContainerHelper -Force
+          }
+          else {
+            Write-Host "Installing BcContainerHelper from PSGallery"
+            Install-Module BcContainerHelper -Scope CurrentUser -Force
+            Import-Module BcContainerHelper -Force
+          }
 
       - name: Resolve BC artifacts
         id: artifacts
@@ -41,6 +57,15 @@ jobs:
         run: |
           $artifactUrl = Get-BCArtifactUrl -type 'Sandbox' -select 'Latest' -country 'gb'
           echo "artifactUrl=$artifactUrl" | Out-File -FilePath $Env:GITHUB_OUTPUT -Append
+
+      - name: Cache AL symbols (.alpackages)
+        uses: actions/cache@v4
+        with:
+          path: .alpackages
+          key: alpkgs-${{ runner.os }}-${{ hashFiles('app.json') }}-${{ steps.artifacts.outputs.artifactUrl }}
+          restore-keys: |
+            alpkgs-${{ runner.os }}-${{ hashFiles('app.json') }}-
+            alpkgs-${{ runner.os }}-
 
       - name: Build in ephemeral BC container
         shell: pwsh
@@ -86,8 +111,7 @@ jobs:
               -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" `
               -EnableCodeCop:$true `
               -EnableAppSourceCop:$false `
-              -EnablePerTenantExtensionCop:$true `
-              -failonwarnings:$false
+              -EnablePerTenantExtensionCop:$true
           }
           finally {
             try {
@@ -99,13 +123,6 @@ jobs:
             }
           }
 
-      - name: Cache BcContainerHelper module
-        uses: actions/cache@v4
-        with:
-          path: ~\Documents\PowerShell\Modules\BcContainerHelper
-          key: bccontainerhelper-${{ runner.os }}-v6
-          restore-keys: |
-            bccontainerhelper-${{ runner.os }}-
       - name: List built artifacts before upload
         shell: pwsh
         run: |
