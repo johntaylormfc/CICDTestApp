@@ -15,6 +15,10 @@ Write-Host "OutputFolder:     $OutputFolder"
 # Ensure output folder
 New-Item -ItemType Directory -Force -Path $OutputFolder | Out-Null
 
+# Normalize paths (avoid trailing backslashes breaking quoted native args)
+$AppProjectPath = $AppProjectPath.TrimEnd('\')
+$OutputFolder   = $OutputFolder.TrimEnd('\\')
+
 # Ensure BcContainerHelper
 if (-not (Get-Module -ListAvailable -Name BcContainerHelper)) {
     Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
@@ -46,6 +50,7 @@ New-BcContainer `
 try {
     # Symbols: download to host .alpackages
     $pkgPath = Join-Path $AppProjectPath '.alpackages'
+    $pkgPath = $pkgPath.TrimEnd('\\')
     New-Item -ItemType Directory -Force -Path $pkgPath | Out-Null
     $symbolCmd = @('Download-BcContainerAppSymbols','Get-BcContainerAppSymbols','Download-NavContainerAppSymbols','Get-NavContainerAppSymbols') |
         ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
@@ -80,8 +85,8 @@ try {
         Expand-Archive -Path $zipLocal -DestinationPath $pkgPath -Force
     }
 
-    # Host compile using AL VSIX
-    $alDir = Join-Path $AppProjectPath '_al'
+    # Host compile using AL VSIX (extract outside project path to avoid picking up template .al files)
+    $alDir = Join-Path ([System.IO.Path]::GetTempPath()) ('alvsix_' + [System.Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $alDir | Out-Null
     $vsix = Join-Path $alDir 'al.vsix'
     $vsixOut = Join-Path $alDir 'vsix'
@@ -90,15 +95,32 @@ try {
         Invoke-WebRequest -Uri 'https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-dynamics-smb/vsextensions/al/latest/vspackage' -OutFile $vsix
     }
     if (Test-Path $vsixOut) { Remove-Item $vsixOut -Recurse -Force }
-    Expand-Archive -Path $vsix -DestinationPath $vsixOut -Force
+    $vsixZip = Join-Path $alDir 'al.vsix.zip'
+    if (Test-Path $vsixZip) { Remove-Item $vsixZip -Force }
+    Copy-Item -Path $vsix -Destination $vsixZip -Force
+    Expand-Archive -Path $vsixZip -DestinationPath $vsixOut -Force
+    Remove-Item $vsixZip -Force
     $alcCandidates = Get-ChildItem -Path $vsixOut -Filter 'alc.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
     if (-not $alcCandidates) { throw 'alc.exe not found in downloaded VSIX' }
     $alc = $alcCandidates | Where-Object { $_ -match '\\extension\\bin\\' } | Select-Object -First 1
     if (-not $alc) { $alc = $alcCandidates | Select-Object -First 1 }
 
+    # Remove any legacy VSIX extraction inside the project path (could cause template .al files to be compiled)
+    $legacyAlDir = Join-Path $AppProjectPath '_al'
+    if (Test-Path $legacyAlDir) {
+        Write-Host "Removing legacy VSIX folder: $legacyAlDir"
+        Remove-Item $legacyAlDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host "ALC: $alc"
     $outApp = Join-Path $OutputFolder 'app.app'
-    & $alc "/project:$AppProjectPath" "/packagecachepath:$pkgPath" "/out:$outApp"
+    # Build argument array to avoid concatenation issues
+    $alcArgs = @(
+        "/project:$AppProjectPath",
+        "/packagecachepath:$pkgPath",
+        "/out:$outApp"
+    )
+    & $alc $alcArgs
     if ($LASTEXITCODE -ne 0) { throw "ALC failed with exit code $LASTEXITCODE" }
 
     Write-Host "Built: $outApp"
