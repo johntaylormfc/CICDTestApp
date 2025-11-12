@@ -115,6 +115,7 @@ jobs:
               -containerName $containerName `
               -appProjectFolder $Env:GITHUB_WORKSPACE `
               -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" `
+              -CopyAppToContainer `
               -EnableCodeCop:$true `
               -EnableAppSourceCop:$false `
               -EnablePerTenantExtensionCop:$true
