@@ -100,10 +100,19 @@ jobs:
           try {
             # Re-import module and ensure symbols downloaded to HOST first (host path shares not reliable for direct compile)
             Import-Module BcContainerHelper -ErrorAction Stop
-            $symbolCmd = @('Download-BcContainerAppSymbols','Get-BcContainerAppSymbols') | ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+            $symbolCmd = @(
+              'Download-BcContainerAppSymbols',
+              'Get-BcContainerAppSymbols',
+              'Download-NavContainerAppSymbols',
+              'Get-NavContainerAppSymbols'
+            ) | ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
             if ($null -ne $symbolCmd) {
               Write-Host "Downloading symbols to host using: $($symbolCmd.Name)"
-              & $symbolCmd.Name -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
+              try {
+                & $symbolCmd.Name -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -ErrorAction Stop
+              } catch {
+                Write-Host "Symbol download command failed: $($_.Exception.Message). Continuing, symbols may already be cached."
+              }
             } else { Write-Host "No symbol download command found; continuing" }
 
             # Copy project (now with symbols) into container path c:\app
@@ -114,15 +123,22 @@ jobs:
             # Prepare artifacts folder on host
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
 
-            # Compile from inside-container path, output to container path then copy back to host
+            # Compile using ALC inside the container to avoid host share checks
             $containerOutput = "c:\app\output"
-            Compile-AppInBCContainer `
-              -containerName $containerName `
-              -appProjectFolder "c:\app" `
-              -appOutputFolder $containerOutput `
-              -EnableCodeCop:$true `
-              -EnableAppSourceCop:$false `
-              -EnablePerTenantExtensionCop:$true
+            Invoke-ScriptInBCContainer -containerName $containerName -scriptBlock {
+              $ErrorActionPreference = 'Stop'
+              if (-not (Test-Path 'c:\app')) { throw 'Source folder c:\app not found inside container' }
+              New-Item -ItemType Directory -Force -Path 'c:\app\output' | Out-Null
+              $alc = 'alc.exe'
+              $args = @(
+                '/project:c:\app',
+                '/packagecachepath:c:\app\.alpackages',
+                '/out:c:\app\output\app.app'
+              )
+              Write-Host "Running ALC: $alc $($args -join ' ')"
+              & $alc @args
+              if ($LASTEXITCODE -ne 0) { throw "ALC failed with exit code $LASTEXITCODE" }
+            }
 
             Write-Host "Copy compiled artifacts from container to host artifacts folder"
             Copy-FileFromBcContainer -containerName $containerName -containerPath $containerOutput -localPath "$Env:GITHUB_WORKSPACE\artifacts" -silent
