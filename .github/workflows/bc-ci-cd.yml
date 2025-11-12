@@ -108,7 +108,8 @@ jobs:
 
             # Copy project (now with symbols) into container path c:\app
             Write-Host "Copying project into container path c:\app"
-            Copy-FileToBcContainer -containerName $containerName -localPath $Env:GITHUB_WORKSPACE -containerPath "c:\app" -includeSubFolders
+            # Copy-FileToBcContainer copies directories recursively by default; removed unsupported -includeSubFolders parameter
+            Copy-FileToBcContainer -containerName $containerName -localPath $Env:GITHUB_WORKSPACE -containerPath "c:\app"
 
             # Prepare artifacts folder on host
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
