@@ -69,7 +69,14 @@ jobs:
           try {
             # Re-import module to guard against session boundary issues
             Import-Module BcContainerHelper -ErrorAction Stop
-            Download-BcContainerAppSymbols -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
+            $symbolCmd = @('Download-BcContainerAppSymbols','Get-BcContainerAppSymbols') | ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+            if ($null -ne $symbolCmd) {
+              Write-Host "Using symbol download command: $($symbolCmd.Name)"
+              & $symbolCmd.Name -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
+            }
+            else {
+              Write-Host "No symbol download command found. Proceeding to compile; compiler will attempt symbol resolution."
+            }
 
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
 
@@ -92,6 +99,13 @@ jobs:
             }
           }
 
+      - name: Cache BcContainerHelper module
+        uses: actions/cache@v4
+        with:
+          path: ~\Documents\PowerShell\Modules\BcContainerHelper
+          key: bccontainerhelper-${{ runner.os }}-v6
+          restore-keys: |
+            bccontainerhelper-${{ runner.os }}-
       - name: List built artifacts before upload
         shell: pwsh
         run: |
