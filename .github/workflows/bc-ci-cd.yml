@@ -128,7 +128,7 @@ jobs:
                   Copy-Item -Path $_.FullName -Destination $dest -Force
                 }
               }
-              Copy-FileFromBcContainer -containerName $containerName -containerPath 'C:\\tempSymbols' -localPath $pkgPath -silent
+              Copy-FileFromBcContainer -containerName $containerName -containerPath 'C:\\tempSymbols' -localPath $pkgPath
             }
 
             # Prepare artifacts folder on host
@@ -156,8 +156,7 @@ jobs:
             & $alc @args
             if ($LASTEXITCODE -ne 0) { throw "ALC failed on host with exit code $LASTEXITCODE" }
 
-            Write-Host "Copy compiled artifacts from container to host artifacts folder"
-            Copy-FileFromBcContainer -containerName $containerName -containerPath $containerOutput -localPath "$Env:GITHUB_WORKSPACE\artifacts" -silent
+            # Compiled on host; no need to copy artifacts from container
 
             Write-Host "Listing .alpackages after compile (if present)";
             if (Test-Path "$Env:GITHUB_WORKSPACE\.alpackages") {
