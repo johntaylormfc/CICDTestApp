@@ -75,7 +75,13 @@ jobs:
               -failonwarnings:$false
           }
           finally {
-            Remove-BcContainer -containerName $containerName -force
+            try {
+              # Some BcContainerHelper versions don't support -Force. Remove without it and ignore errors.
+              Remove-BcContainer -containerName $containerName
+            }
+            catch {
+              Write-Host "Container cleanup warning: $($_.Exception.Message)"
+            }
           }
 
       - name: Upload build artifacts (.app)
