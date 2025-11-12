@@ -1,0 +1,20 @@
+# AL / Business Central typical ignores
+.alpackages/
+.vscode/
+.history/
+.snapshots/
+.serena/
+# Build artifacts
+artifacts/
+*.app
+# Logs and temp
+*.log
+*.tmp
+*.temp
+~$*
+# Node/npm (if used for tooling)
+node_modules/
+package-lock.json
+# VS / OS files
+.DS_Store
+Thumbs.db

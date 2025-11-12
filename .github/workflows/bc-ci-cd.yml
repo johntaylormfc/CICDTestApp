@@ -1,0 +1,120 @@
+name: BC CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Also deploy the built app to a BC environment'
+        type: boolean
+        required: false
+        default: false
+      environment:
+        description: 'Target BC environment name (Admin Center)'
+        type: string
+        required: false
+        default: 'Sandbox'
+
+jobs:
+  build:
+    name: Build AL app
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell Gallery trust and install BcContainerHelper
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+          Install-Module BcContainerHelper -Scope CurrentUser -Force
+
+      - name: Resolve BC artifacts
+        id: artifacts
+        shell: pwsh
+        run: |
+          $artifactUrl = Get-BCArtifactUrl -type 'Sandbox' -select 'Latest' -country 'w1'
+          echo "artifactUrl=$artifactUrl" | Out-File -FilePath $Env:GITHUB_OUTPUT -Append
+
+      - name: Build in ephemeral BC container
+        shell: pwsh
+        env:
+          ARTIFACT_URL: ${{ steps.artifacts.outputs.artifactUrl }}
+        run: |
+          $containerName = "bcbuild$($env:GITHUB_RUN_NUMBER)"
+          New-BcContainer `
+            -accept_eula `
+            -containerName $containerName `
+            -artifactUrl $env:ARTIFACT_URL `
+            -auth UserPassword `
+            -updateHosts `
+            -enableTaskScheduler:$false
+
+          try {
+            Download-BcContainerAppSymbols -containerName $containerName -appProjectFolder $Env:GITHUB_WORKSPACE -AddGITUserToContainer
+
+            New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
+
+            Compile-AppInBCContainer `
+              -containerName $containerName `
+              -appProjectFolder $Env:GITHUB_WORKSPACE `
+              -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" `
+              -EnableCodeCop:$true `
+              -EnableAppSourceCop:$false `
+              -EnablePerTenantExtensionCop:$true `
+              -failonwarnings:$false
+          }
+          finally {
+            Remove-BcContainer -containerName $containerName -force
+          }
+
+      - name: Upload build artifacts (.app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bc-app
+          path: artifacts/*.app
+
+  deploy:
+    name: Deploy to Business Central (manual)
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
+    runs-on: windows-latest
+    environment: ${{ inputs.environment || 'Sandbox' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Download built app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bc-app
+          path: ./artifacts
+
+      - name: Install BcContainerHelper
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+          Install-Module BcContainerHelper -Scope CurrentUser -Force
+
+      - name: Authenticate and deploy
+        shell: pwsh
+        env:
+          BC_TENANT_ID: ${{ secrets.BC_TENANT_ID }}
+          BC_ENVIRONMENT: ${{ inputs.environment || 'Sandbox' }}
+          BC_CLIENT_ID: ${{ secrets.BC_CLIENT_ID }}
+          BC_CLIENT_SECRET: ${{ secrets.BC_CLIENT_SECRET }}
+        run: |
+          if (-not (Test-Path 'artifacts')) { throw 'No artifacts folder found' }
+          $appFiles = Get-ChildItem -Path 'artifacts' -Filter '*.app' | Select-Object -ExpandProperty FullName
+          if (-not $appFiles) { throw 'No .app files found in artifacts' }
+
+          $secureSecret = ConvertTo-SecureString $env:BC_CLIENT_SECRET -AsPlainText -Force
+          $bcAuthContext = New-BcAuthContext -tenantId $env:BC_TENANT_ID -clientId $env:BC_CLIENT_ID -clientSecret $secureSecret
+
+          Publish-PerTenantExtensionApps -bcAuthContext $bcAuthContext -environment $env:BC_ENVIRONMENT -appFiles $appFiles -skipVerification:$true -doNotInstallApps:$false -InstallPublishedApps:$true
+
