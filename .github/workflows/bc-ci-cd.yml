@@ -127,8 +127,18 @@ jobs:
                 Get-ChildItem -Path 'C:\\Applications' -Filter '*.app' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
                   Copy-Item -Path $_.FullName -Destination $dest -Force
                 }
+                # Zip the symbols to a single file for reliable copy-out
+                $zip = 'C:\\tempSymbols.zip'
+                if (Test-Path $zip) { Remove-Item $zip -Force }
+                Compress-Archive -Path 'C:\\tempSymbols\\*' -DestinationPath $zip -Force
               }
-              Copy-FileFromBcContainer -containerName $containerName -containerPath 'C:\\tempSymbols' -localPath $pkgPath
+              # Prepare a temp directory and copy the zip from container
+              $tmpDir = Join-Path $Env:GITHUB_WORKSPACE '_tmp'
+              New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+              $zipLocal = Join-Path $tmpDir 'tempSymbols.zip'
+              if (Test-Path $zipLocal) { Remove-Item $zipLocal -Force }
+              Copy-FileFromBcContainer -containerName $containerName -containerPath 'C:\\tempSymbols.zip' -localPath $zipLocal
+              Expand-Archive -Path $zipLocal -DestinationPath $pkgPath -Force
             }
 
             # Prepare artifacts folder on host
