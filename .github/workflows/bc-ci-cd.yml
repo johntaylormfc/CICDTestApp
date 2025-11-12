@@ -88,6 +88,9 @@ jobs:
           # Provide mandatory credentials for -auth UserPassword
           $securePwd = ConvertTo-SecureString ("P@ssw0rd!$($env:GITHUB_RUN_NUMBER)") -AsPlainText -Force
           $credential = New-Object System.Management.Automation.PSCredential ("admin", $securePwd)
+         
+            # Mount the workspace into the container to avoid host sharing issues
+            $hostProject = $Env:GITHUB_WORKSPACE
           New-BcContainer `
             -accept_eula `
             -containerName $containerName `
@@ -95,7 +98,8 @@ jobs:
             -auth UserPassword `
             -Credential $credential `
             -updateHosts `
-            -enableTaskScheduler:$false
+             -enableTaskScheduler:$false `
+             -additionalParameters @("--volume $hostProject:c:\app")
 
           try {
             # Re-import module to guard against session boundary issues
@@ -111,11 +115,10 @@ jobs:
 
             New-Item -ItemType Directory -Force -Path "$Env:GITHUB_WORKSPACE\artifacts" | Out-Null
 
-            Compile-AppInBCContainer `
-              -containerName $containerName `
-              -appProjectFolder $Env:GITHUB_WORKSPACE `
-              -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" `
-              -CopyAppToContainer `
+             Compile-AppInBCContainer `
+               -containerName $containerName `
+               -appProjectFolder "c:\app" `
+               -appOutputFolder "$Env:GITHUB_WORKSPACE\artifacts" ` 
               -EnableCodeCop:$true `
               -EnableAppSourceCop:$false `
               -EnablePerTenantExtensionCop:$true
