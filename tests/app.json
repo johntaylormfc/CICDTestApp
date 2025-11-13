@@ -1,0 +1,39 @@
+{
+  "id": "4c6f0c6a-1c2b-4d3b-9f1c-8f1f1acff001",
+  "name": "CICDTestApp Tests",
+  "publisher": "Default Publisher",
+  "version": "1.0.0.0",
+  "brief": "Sample tests for CICDTestApp",
+  "description": "Minimal test app containing sample tests.",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "",
+  "logo": "",
+  "dependencies": [
+    {
+      "id": "29fee56b-f075-4b00-8412-e91f20a40875",
+      "publisher": "Default Publisher",
+      "name": "CICDTestApp",
+      "version": "1.0.0.0"
+    }
+  ],
+  "screenshots": [],
+  "platform": "1.0.0.0",
+  "application": "27.0.0.0",
+  "idRanges": [
+    {
+      "from": 50200,
+      "to": 50249
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true
+  },
+  "runtime": "16.0",
+  "features": [
+    "NoImplicitWith"
+  ]
+}

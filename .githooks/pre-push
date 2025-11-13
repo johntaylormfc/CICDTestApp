@@ -1,0 +1,4 @@
+#!/bin/sh
+# Git hook wrapper to run PowerShell deploy
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_DIR/pre-push.ps1" "$@"
